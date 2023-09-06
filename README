@@ -1,0 +1,136 @@
+Nume:		Dumitrescu Alexandra
+Grupă: 		333CA ACS CTI 
+Dată: 		Aprilie 2023
+
+# Tema2 - Înmulțire de matrice
+	C = A x B x At + Bt x Bt, A - superior triunghiulară
+
+Organizare
+-
+
+1. Explicații pentru implementarea soluției **blas**
+
+ * S-au folosit metode definite în blas.h pe Level 3
+ * Am început prin a calcula A x B x At, prin a copia conținutul
+ memoriei de la adresa matricei B într-o matrice în care se va afla rezultatul
+ calculului A x B.
+ * Am folosit metoda cblas_dtrmm() pentru a înmulți o matrice superior
+ triunghiulară A, cu o matrice pătratică B, A x B. Rezultatul a fost iar
+ înmulțit cu transpusa matricei A, care va fi inferior triunghiulară.
+ Obținem A x B x At.
+ * Pentru a calcula A x B x At + Bt x Bt aplicăm direct metoda
+ cblas_dgem pentru a aduna la rezultatul obținut anterior înmulțirea
+ transpusei lui B cu ea insăși.
+
+
+2. Explicații pentru implementarea soluției **neopt**
+
+ * Pentru a ține cont de faptul că matricea A este superior triunghiulară
+  pătratică, de dimensiune N, ne gândim la o abordare clasică ce ar necesita
+  în total N * N * N operații, având O(N^3) și încercăm să o reducem la
+  complexitatea de O(N^3 / 2).
+ * Fie R = A x B, A, B - matrice pătratice de dimensiune N și A superior
+  triunghiulară. Pentru un element R[i][j] distingem cazurile
+  i = 1 - Avem N * N operații (linia nu are elemente nule, se ia toată în calcul)
+  i = 2 - Avem N * (N - 1) operații (linia 2 din A are 1 element nul, deci
+  reducem o înmulțire care nu este necesară per fiecare coloană)
+  i = 3 - Avem N * (N - 2) operații (analog)
+  i = 4 - Avem N * (N - 3) operații
+  (...)
+  i = N - 1 - Avem N * (1) operații
+ * Făcând suma numărului de operații, complexitatea va fi N * (1 + 2 + .. + N),
+  ceea ce se reduce la O(N^3/ 2).
+ * Urmând această idee, prima dată calculăm AxB, și apoi R * At. Pentru a nu
+  adăuga la complexitate, nu am mai calculat separat transpusa matricei A, ci
+  am considerat direct că
+  At[i][j] = At[j][i], care va fi matrice inferior triunghiulară
+ * La acest rezultat, se adaugă Bt * Bt, care este o înmulțire clasică
+  de matrice de complexitate O(N^3)
+ * Pașii metodei sunt următorii
+	(1) A x B[i][j]  	   = A[i][k] X B[k][j], i =1:N, j = 1:N, k = i:N
+	(2) A X B X At[i][j]  += A X B[i][k] X A[j][k], i =1:N, j = 1:N, k = j:N
+	(3) A X B x At[i][j]   = B[k][i] X B[j][k], i = 1:N, j = 1:N, K = 1:N 
+  
+ 
+3. Explicații pentru implementarea soluției **opt**
+
+ * Pornind de la codul metodei neoptimizate, aducem următoarele optimizări
+	** Folosim resurse de tip register, pentru a evita accesurile de memorie
+	care sunt mai costisitoare.
+	** Am eliminat constantele din cadrul buclelor.
+	** Am redus accesul la vectori folosind aritmetică pe pointeri.
+	** Am analizat și dedus care ar fi cel mai potrivit loop order pentru
+	fiecare buclă pentru a asigura un acces mai bun al memoriei
+		i-j-k  	j-i-k  	k-i-j  k-j-i  i-k-j  j-k-i
+(1)		secv	secv    const  nesecv   const  nesecv  A[i][k]
+		nesecv	nesecv	secv   const    secv   nesecv  B[k][j]
+		const	const	secv   nesecv	secv   nesecv  AxB[i][j]
+		Am ales loop order i-k-j
+(2)		i-j-k  	j-i-k  	k-i-j  k-j-i  i-k-j  j-k-i		
+		const   const   secv   nesecv  secv  nesecv 	AxBxAt[i][j]
+		secv	secv	const  nesecv  const nesecv		AxB[i][k]
+		secv    secv    nesecv const   nesecv const     A[j][k]
+		Am ales loop order i-j-k
+(3)		Am ales din considerentele discutate la laborator loop order i-j-k
+	** Am pastrat ideea de a nu mai transpune matricele A și B
+	** Pentru a reduce operațiile pe care le implică pointerii, am ales
+	să mă folosesc de pointeri la începutul zonelor de memorie, pe care
+	îi incrementam fie cu 1, fie cu N.
+
+
+4. Explicațiile valorilor oferite rulării cu cachegrind
+ * Am inclus în arhivă grafice referitoare la numărul de instrucțiuni
+ accesate din memorie și la cantitatea de date.
+ * **I refs** - O dată ce am folosit aritmetica pe pointeri, înlocuind
+ referențierea clasică de A[i][j] ce implică generare de instrucțiuni
+ în plus. De exemplu, pentru cazul (2) la matricea AxBxAt[i][j] mă folosesc de
+ un pointer la începutul zonei de memorie AxBxAt, pe care îl iterez cu N, după
+ ce am terminat de accesat linia. Astfel, în loc să se genereze pentru fiecare
+ referențiere tip AxBxAt[i][j] aritmetica AxBxAt[0][0] + i * N + j, voi 
+ face o incrementare pe coloana cu 1 și o adunare cu N pe linie.
+ Deci, în loc de N * N  înmulțiri și N * N * 2 adunări, voi avea N adunări,
+ pentru a mă deplasa pe linii și N * N incremementări cu 1 pentru coloane.
+ N + N * N operații VS N * N * 3 operații. Analog pentru celelalte operații.
+ * **D refs** - Ne putem aștepta să se decrementeze numărul de accese la zona
+ de date pentru că am folosit variabile de tip register. Pe lângă avantajul
+ clasic al creșterii vitezei executabilului, lucrul cu regiștrii reduce
+ traficul cu memoria deoarece datele sunt reținute direct în regiștrii.
+ * **Data misses** - numarul de missuri pentru accesele de memorie scade
+ deoarece ne-am asigurat în varianta optimizată să parcurgem secvențial
+ matricele.
+ * **Instruction misses** - parametrii s-au păstrat aproximativ la fel.
+
+
+5. Efectul optimizărilor propuse
+ * Din punct de vedere al modificării loop order ului fiecărei
+ bucle din algoritm, zonele de memorie sunt accesate liniar, în zone
+ continue de memorie, utilizând considerabil mai bine cache-ul. Scade
+ implicit valoarea cache miss-ului pentru că datele sunt accesate în zone
+ continue de memorie.
+ * Folosirea variabilelor de tip register a îmbunătățit timpul
+ deoarece instrucțiunile de acces ale memoriei sunt mai costisitoare și
+ variabilele respective nu mai sunt reținute in cache.
+ * Înlocuirea accesului prin referențiere al vectorilor cu aritmetică
+ pe pointeri a redus numărul de instrucțiuni.
+ 
+6. Analiză comparativă
+ * Pentru a analiza comparativ cele 3 soluții propuse, am trasat graficele
+	- N - timp 
+	- N - timp - seed (am ilustrat pentru fiecare test datele N si time)
+	- Data references - N
+	- Instruction references - N
+ Datele au fost extrase din 10, respectiv 11 teste rulate cu următoarele
+ dimensiuni N [160, 400, 560, 720, 800, 920, 1000, 1200, 1600];
+ * Se poate concluziona că varianta blas este cea care se comportă
+ cel mai bine din toate punct de vedere, al timpului și al utilizării
+ memoriei. Varianta neoptimizată reprezintă o primă variantă, care
+ se poate observa că nu este deloc optimă, dar asupra căreia am reușit
+ să reducem semnificativ timpul și numărul de accese ale memoriei.
+ Pentru date cu dimensiuni reduse, cele 3 implementări se comportă
+ aproximativ asemănător.
+ Putem analiza valorile timpilor obținuți pe rularea testului cu
+ valoare N = 2000.  Varianta blas are 4.193154 secunde, varianta neoptimizată
+ 153.861954 secunde, iar varianta optimizată are 37.687344secunde.
+ Am reușit astfel să obținem o variantă care este de 4 ori mai optimă
+ temporal decât varianta neoptimizată, însă și de aproximativ 9 ori mai
+ ineficientă decât varianta blas.
